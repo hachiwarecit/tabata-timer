@@ -369,15 +369,30 @@ function loadPattern(p) {
    ========================================================= */
 let ac = null, master = null;
 function initAudio() {
-  if (ac) { if (ac.state === 'suspended') ac.resume().catch(()=>{}); return; }
+  // iPhone/iPad：消音モードでも鳴らす（iOS 17以降）
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  if (!ac) {
+    try {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = ac.createDynamicsCompressor();
+      comp.threshold.value = -12; comp.ratio.value = 6;
+      master = ac.createGain(); master.gain.value = 0.9;
+      master.connect(comp); comp.connect(ac.destination);
+    } catch (e) { ac = null; return; }
+  }
+  // 停止・中断（suspended / interrupted）していたら再開
+  if (ac.state !== 'running') ac.resume().catch(() => {});
+  // iOSの音声ロック解除：タップ中に無音を1回鳴らす
   try {
-    ac = new (window.AudioContext || window.webkitAudioContext)();
-    const comp = ac.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.ratio.value = 6;
-    master = ac.createGain(); master.gain.value = 0.9;
-    master.connect(comp); comp.connect(ac.destination);
-  } catch (e) { ac = null; }
+    const b = ac.createBuffer(1, 1, 22050), src = ac.createBufferSource();
+    src.buffer = b; src.connect(ac.destination); src.start(0);
+  } catch (e) {}
 }
+// 画面のどこをタップしても音声を有効化
+['touchend', 'pointerdown', 'click'].forEach(t => document.addEventListener(t, initAudio, { passive: true }));
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && ac && ac.state !== 'running') ac.resume().catch(() => {});
+});
 function tone({ freq, type = 'square', start = 0, dur = 0.12, vol = 0.35, glideTo = null, cutoff = 4000 }) {
   if (!ac || !soundOn) return;
   const t = ac.currentTime + start;

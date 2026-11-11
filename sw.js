@@ -1,5 +1,5 @@
 // オフライン対応：アプリ本体を保存し、フォントは一度読んだら保存
-const CACHE = 'tabata-v1';
+const CACHE = 'tabata-v2';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
