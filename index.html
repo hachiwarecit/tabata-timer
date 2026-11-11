@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#08080a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TABATA">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<title>TABATA TIMER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08080a;
+    --panel:#121216;
+    --line:#24242b;
+    --text:#f2f2f4;
+    --mute:#7c7c88;
+    --accent:#ffc400;           /* 現在フェーズの色（JSで切替） */
+    --glow:rgba(255,196,0,.35);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:var(--bg);color:var(--text);overflow:hidden}
+  body{
+    font-family:"Noto Sans JP",system-ui,sans-serif;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    user-select:none;-webkit-user-select:none;
+  }
+  .bgglow{
+    position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse 60% 70% at 50% 50%,var(--glow),transparent 70%);
+    opacity:.55;transition:background .4s ease;
+  }
+  .app{
+    position:relative;height:100%;
+    display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    gap:clamp(12px,3vw,40px);
+    padding:clamp(10px,3vh,28px) clamp(16px,4vw,48px);
+  }
+
+  /* ---------- 左：フェーズ／セット ---------- */
+  .left{display:flex;flex-direction:column;gap:clamp(8px,2.6vh,22px);min-width:0}
+  .pattern{font-family:Oswald,sans-serif;font-size:clamp(10px,2.6vh,14px);letter-spacing:.25em;color:var(--mute)}
+  .phase{font-family:Oswald,sans-serif;font-weight:700;line-height:1;letter-spacing:.06em;
+    font-size:clamp(26px,min(15vh,6.4vw),96px);color:var(--accent);
+    text-shadow:0 0 24px var(--glow);white-space:nowrap;transition:color .3s}
+  .set-label{font-family:Oswald,sans-serif;color:var(--mute);letter-spacing:.2em;font-size:clamp(11px,3vh,16px)}
+  .set-num{font-family:Oswald,sans-serif;font-weight:700;line-height:1;font-size:clamp(30px,12vh,80px)}
+  .set-num small{font-size:.45em;color:var(--mute);font-weight:500}
+  .dots{display:flex;gap:clamp(5px,1.4vh,10px);flex-wrap:wrap}
+  .dot{width:clamp(10px,3.2vh,18px);height:clamp(10px,3.2vh,18px);border-radius:50%;
+    border:2px solid var(--line);transition:all .3s}
+  .dot.done{background:var(--mute);border-color:var(--mute)}
+  .dot.now{border-color:var(--accent);background:var(--accent);box-shadow:0 0 12px var(--accent);animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{50%{transform:scale(1.2)}}
+  .sub{font-size:clamp(11px,3vh,15px);color:var(--mute)}
+
+  /* ---------- 中央：リング ---------- */
+  .ring-wrap{position:relative;width:min(78vh,42vw);aspect-ratio:1;cursor:pointer}
+  .ring{width:100%;height:100%;transform:rotate(-90deg)}
+  .ring .track{stroke:var(--line)}
+  .ring{overflow:visible}
+  .ring .prog,.ring .prog-glow{stroke:var(--accent);stroke-linecap:round;transition:stroke .3s}
+  .ring .prog-glow{opacity:.22}
+  .ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .time{font-family:Oswald,sans-serif;font-weight:700;line-height:1;
+    font-size:min(30vh,14.5vw);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .time.flash{animation:flash .35s ease-out}
+  @keyframes flash{0%{transform:scale(1.12);color:var(--accent)}100%{transform:scale(1)}}
+  .hint{font-family:Oswald,sans-serif;letter-spacing:.3em;color:var(--mute);font-size:clamp(10px,2.6vh,13px);margin-top:.4em}
+  .paused-badge{position:absolute;top:22%;font-family:Oswald,sans-serif;letter-spacing:.35em;
+    font-size:clamp(11px,3vh,15px);color:var(--accent);display:none}
+  .is-paused .paused-badge{display:block;animation:blink 1.2s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ---------- 右：操作 ---------- */
+  .right{display:flex;flex-direction:column;align-items:stretch;gap:clamp(8px,2.4vh,16px);justify-self:end;width:min(100%,240px)}
+  .btn{
+    font-family:Oswald,"Noto Sans JP",sans-serif;font-weight:700;letter-spacing:.15em;
+    border:1px solid var(--line);background:var(--panel);color:var(--text);
+    border-radius:14px;padding:clamp(8px,2.6vh,16px) 14px;font-size:clamp(13px,3.6vh,18px);
+    display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;
+    transition:transform .08s,background .2s,border-color .2s,opacity .2s;
+  }
+  .btn:active{transform:scale(.96)}
+  .btn:disabled{opacity:.3;pointer-events:none}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#0a0a0a;
+    box-shadow:0 0 22px var(--glow);padding:clamp(12px,4.4vh,24px) 14px;font-size:clamp(15px,4.6vh,24px)}
+  .btn svg{width:1.1em;height:1.1em}
+  .row{display:flex;gap:clamp(6px,1.6vh,12px)}
+  .row .btn{flex:1}
+  .stats{display:flex;flex-direction:column;gap:4px;padding:0 4px}
+  .stat{display:flex;justify-content:space-between;align-items:baseline;font-size:clamp(10px,2.8vh,13px);color:var(--mute)}
+  .stat b{font-family:Oswald,sans-serif;font-weight:500;color:var(--text);font-size:clamp(13px,3.6vh,18px);letter-spacing:.05em}
+
+  /* ---------- 確認ダイアログ ---------- */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:10}
+  .modal.show{display:flex}
+  .modal-box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px 26px;text-align:center;min-width:260px}
+  .modal-box p{margin-bottom:16px;font-size:16px}
+  .modal-box .row{justify-content:center}
+
+  /* ---------- 画面切替 ---------- */
+  .view{display:none}
+  .view.active{display:grid}
+  .home.active,.edit.active{display:flex}
+  .back{align-self:flex-start;font-family:Oswald,sans-serif;font-weight:500;letter-spacing:.2em;font-size:clamp(11px,3vh,14px);
+    color:var(--mute);background:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer}
+  .back:active{transform:scale(.96)}
+
+  /* ---------- ホーム ---------- */
+  .home,.edit{position:relative;height:100%;flex-direction:column;padding:clamp(12px,3.5vh,28px) clamp(16px,4vw,48px);gap:clamp(10px,3vh,22px)}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.18em;font-size:clamp(18px,6vh,30px)}
+  .brand span{color:var(--accent);text-shadow:0 0 18px var(--glow)}
+  .list{flex:1;min-height:0;display:flex;gap:clamp(10px,2vw,18px);overflow-x:auto;overflow-y:hidden;
+    scroll-snap-type:x mandatory;padding:4px 2px 10px;align-items:stretch}
+  .list::-webkit-scrollbar{display:none}
+  .card{scroll-snap-align:start;flex:0 0 clamp(200px,28vw,280px);position:relative;text-align:left;
+    background:linear-gradient(160deg,#17171c,#0e0e12);border:1px solid var(--line);border-radius:20px;
+    padding:clamp(12px,3.4vh,22px);display:flex;flex-direction:column;gap:clamp(6px,2vh,14px);cursor:pointer;color:var(--text);
+    transition:transform .1s,border-color .2s}
+  .card:active{transform:scale(.97)}
+  .card:hover{border-color:#3a3a44}
+  .card-name{font-weight:900;font-size:clamp(16px,5vh,24px);padding-right:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .card-stats{display:flex;flex-direction:column;gap:clamp(2px,1vh,6px)}
+  .card-stats div{display:flex;justify-content:space-between;align-items:baseline}
+  .card-stats span{font-family:Oswald,sans-serif;letter-spacing:.2em;font-size:clamp(10px,2.8vh,13px);color:var(--mute)}
+  .card-stats span.w{color:#ff3d2e}.card-stats span.r{color:#18c8ff}
+  .card-stats b{font-family:Oswald,sans-serif;font-weight:700;font-size:clamp(18px,6vh,30px)}
+  .card-foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;
+    font-family:Oswald,sans-serif;letter-spacing:.15em;font-size:clamp(10px,2.8vh,13px);color:var(--mute)}
+  .card-go{color:var(--accent);font-weight:700}
+  .card .edit-btn{position:absolute;top:clamp(8px,2.6vh,16px);right:clamp(8px,2.6vh,16px);width:38px;height:38px;border-radius:12px;
+    border:1px solid var(--line);background:#0b0b0e;color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .card .edit-btn svg{width:18px;height:18px}
+  .card.add{align-items:center;justify-content:center;border-style:dashed;background:transparent;color:var(--mute);
+    font-family:Oswald,sans-serif;letter-spacing:.2em;font-size:clamp(12px,3vh,15px)}
+  .card.add b{font-size:clamp(34px,11vh,56px);font-weight:500;line-height:1;color:var(--accent)}
+  .empty{color:var(--mute);font-size:14px;align-self:center}
+
+  /* ---------- 編集 ---------- */
+  .edit-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(200px,1fr) 2fr;gap:clamp(12px,3vw,32px)}
+  .edit-side{display:flex;flex-direction:column;gap:clamp(8px,2.4vh,16px);min-width:0}
+  .field-label{font-family:Oswald,sans-serif;letter-spacing:.25em;font-size:clamp(10px,2.6vh,12px);color:var(--mute);margin-bottom:6px}
+  .name-input{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--text);
+    font:900 clamp(15px,4.4vh,20px) "Noto Sans JP",sans-serif;padding:clamp(8px,2.4vh,12px) 14px;outline:none;user-select:text;-webkit-user-select:text}
+  .name-input:focus{border-color:var(--accent)}
+  .total-box{font-family:Oswald,sans-serif;font-weight:700;font-size:clamp(24px,8vh,40px);line-height:1}
+  .edit-actions{margin-top:auto;display:flex;gap:8px}
+  .edit-actions .btn{flex:1;font-size:clamp(11px,3vh,14px);padding:clamp(8px,2.2vh,12px) 8px}
+  .btn.danger{color:#ff5a4e;border-color:#3a1c1a}
+  .steppers{display:grid;grid-template-columns:1fr 1fr;gap:clamp(8px,2vh,14px);min-height:0}
+  .stepper{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:clamp(8px,2.2vh,14px);
+    display:flex;flex-direction:column;justify-content:center;gap:clamp(4px,1.4vh,10px)}
+  .st-label{font-family:Oswald,sans-serif;font-weight:700;letter-spacing:.25em;font-size:clamp(11px,3vh,14px);color:var(--mute)}
+  .st-label.w{color:#ff3d2e}.st-label.r{color:#18c8ff}.st-label.p{color:#ffc400}
+  .st-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .st-val{font-family:Oswald,sans-serif;font-weight:700;font-size:clamp(26px,9vh,48px);line-height:1;font-variant-numeric:tabular-nums;text-align:center;flex:1}
+  .st-btn{width:clamp(40px,12vh,56px);aspect-ratio:1;border-radius:14px;border:1px solid var(--line);background:#0b0b0e;color:var(--text);
+    font-size:clamp(20px,6vh,28px);font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation}
+  .st-btn:active{background:var(--accent);color:#0a0a0a;border-color:var(--accent)}
+  .save-btn{padding:clamp(8px,2.4vh,12px) 22px !important;font-size:clamp(13px,3.6vh,17px) !important}
+
+  /* ---------- 縦画面の時（横向き推奨の案内＋縦並び） ---------- */
+  .rotate{display:none;position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translateX(-50%);
+    font-size:12px;color:var(--mute);background:var(--panel);border:1px solid var(--line);padding:6px 12px;border-radius:999px;white-space:nowrap}
+  @media (orientation:portrait){
+    .rotate{display:block}
+    .app{grid-template-columns:1fr;grid-template-rows:auto auto auto;align-content:center;justify-items:center;gap:22px;padding-top:50px}
+    .left{align-items:center;text-align:center}
+    .phase{font-size:clamp(34px,11vw,64px)}
+    .set-num{font-size:clamp(28px,9vw,52px)}
+    .ring-wrap{width:min(72vw,44vh)}
+    .time{font-size:min(20vh,30vw)}
+    .right{justify-self:center;width:min(90vw,340px)}
+    .stats{flex-direction:row;justify-content:space-between}
+    .stat{flex-direction:column;align-items:center}
+    .back{align-self:center}
+    .home,.edit{padding-top:50px}
+    .list{flex-direction:column;overflow-x:hidden;overflow-y:auto;scroll-snap-type:y mandatory}
+    .card{flex:0 0 auto}
+    .card.add{padding:20px}
+    .edit-body{grid-template-columns:1fr;overflow-y:auto}
+    .edit-actions{margin-top:4px}
+  }
+</style>
+</head>
+<body>
+<div class="bgglow"></div>
+<div class="rotate">↻ ROTATE FOR BEST VIEW</div>
+
+<!-- ホーム -->
+<main class="home view" id="homeView">
+  <div class="topbar">
+    <div class="brand"><span>TABATA</span> TIMER</div>
+  </div>
+  <div class="list" id="list"></div>
+</main>
+
+<!-- 編集 -->
+<main class="edit view" id="editView">
+  <div class="topbar">
+    <button class="back" id="editCancel">‹ BACK</button>
+    <div class="brand" id="editTitle" style="font-size:clamp(14px,4.4vh,20px)">EDIT</div>
+    <button class="btn primary save-btn" id="editSave">保存</button>
+  </div>
+  <div class="edit-body">
+    <div class="edit-side">
+      <div>
+        <div class="field-label">NAME</div>
+        <input class="name-input" id="nameInput" maxlength="24" placeholder="パターン名">
+      </div>
+      <div>
+        <div class="field-label">TOTAL</div>
+        <div class="total-box" id="editTotal">0:00</div>
+      </div>
+      <div class="edit-actions" id="editActions">
+        <button class="btn" id="editDup">複製</button>
+        <button class="btn danger" id="editDel">削除</button>
+      </div>
+    </div>
+    <div class="steppers" id="steppers"></div>
+  </div>
+</main>
+
+<!-- タイマー -->
+<main class="app view" id="app">
+  <!-- 左：フェーズ・セット -->
+  <section class="left">
+    <button class="back" id="backHome">‹ HOME</button>
+    <div class="pattern" id="patternName">PATTERN 1</div>
+    <div>
+      <div class="phase" id="phase">READY</div>
+    </div>
+    <div>
+      <div class="set-label">SET</div>
+      <div class="set-num"><span id="setNow">0</span> <small>/ <span id="setTotal">7</span></small></div>
+    </div>
+    <div class="dots" id="dots"></div>
+    <div class="sub" id="subText">&nbsp;</div>
+  </section>
+
+  <!-- 中央：リング -->
+  <section class="ring-wrap" id="ringWrap" aria-label="Timer (tap to start / pause)">
+    <svg class="ring" viewBox="0 0 100 100">
+      <circle class="track" cx="50" cy="50" r="45" fill="none" stroke-width="3"/>
+      <circle class="prog-glow" id="progGlow" cx="50" cy="50" r="45" fill="none" stroke-width="9"
+              stroke-dasharray="282.743" stroke-dashoffset="0"/>
+      <circle class="prog" id="prog" cx="50" cy="50" r="45" fill="none" stroke-width="4"
+              stroke-dasharray="282.743" stroke-dashoffset="0"/>
+    </svg>
+    <div class="ring-center">
+      <div class="paused-badge">PAUSED</div>
+      <div class="time" id="time">0:05</div>
+      <div class="hint" id="hint">TAP TO START</div>
+    </div>
+  </section>
+
+  <!-- 右：操作 -->
+  <section class="right">
+    <div class="row">
+      <button class="btn" id="resetBtn" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        RESET
+      </button>
+      <button class="btn" id="soundBtn" aria-label="Sound on/off"></button>
+    </div>
+    <div class="stats">
+      <div class="stat">NEXT <b id="nextText">トレーニング 45s</b></div>
+      <div class="stat">TOTAL LEFT <b id="totalLeft">11:20</b></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <p id="modalText">リセットしますか？</p>
+    <div class="row">
+      <button class="btn" id="modalCancel">キャンセル</button>
+      <button class="btn primary" id="modalOk" style="padding:10px 18px;font-size:16px">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   パターン（このスマホのブラウザに保存）
+   prep: 開始前カウントダウン秒 / work: トレーニング秒
+   rest: 休憩秒 / sets: セット数（最後のセット後は休憩なし）
+   ========================================================= */
+const STORE_KEY = 'tabata.patterns.v1';
+const DEFAULT_PATTERNS = [
+  { id: 'p1', name: 'PATTERN 1', prep: 5, work: 45, rest: 60, sets: 7 },
+];
+function loadStore() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (Array.isArray(raw)) return raw;
+  } catch (e) {}
+  return DEFAULT_PATTERNS.map(p => ({ ...p }));
+}
+function saveStore() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(patterns)); } catch (e) {}
+}
+let patterns = loadStore();
+
+/* フェーズごとの表示と色 */
+const PHASE_STYLE = {
+  idle: { label: 'READY',     color: '#ffc400' },
+  prep: { label: 'READY',     color: '#ffc400' },
+  work: { label: 'WORK',      color: '#ff3d2e' },
+  rest: { label: 'REST',      color: '#18c8ff' },
+  done: { label: 'FINISH',    color: '#39ff88' },
+};
+
+let pattern = patterns[0] || DEFAULT_PATTERNS[0];
+let phases = [];
+let TOTAL_MS = 0;
+let dotEls = [];
+const CIRC = 2 * Math.PI * 45;
+
+function buildPhases(p) {
+  const list = [];
+  if (p.prep > 0) list.push({ type: 'prep', dur: p.prep, set: 1 });
+  for (let i = 1; i <= p.sets; i++) {
+    list.push({ type: 'work', dur: p.work, set: i });
+    if (i < p.sets && p.rest > 0) list.push({ type: 'rest', dur: p.rest, set: i });
+  }
+  return list;
+}
+
+/* ---------- 状態 ---------- */
+let state = 'idle';     // idle | running | paused | done
+let idx = 0;            // 現在のフェーズ番号
+let phaseEnd = 0;       // 現フェーズ終了時刻 (performance.now基準)
+let pausedRemain = 0;
+let lastSec = null;
+let soundOn = true;
+let timerId = null;
+
+/* ---------- DOM ---------- */
+const $ = id => document.getElementById(id);
+const el = {
+  app: $('app'), phase: $('phase'), setNow: $('setNow'), setTotal: $('setTotal'),
+  dots: $('dots'), sub: $('subText'), time: $('time'), hint: $('hint'), prog: $('prog'), progGlow: $('progGlow'),
+  resetBtn: $('resetBtn'), soundBtn: $('soundBtn'),
+  nextText: $('nextText'), totalLeft: $('totalLeft'), ringWrap: $('ringWrap'),
+  modal: $('modal'), patternName: $('patternName'),
+};
+function loadPattern(p) {
+  pattern = p;
+  phases = buildPhases(p);
+  TOTAL_MS = phases.reduce((s, x) => s + x.dur * 1000, 0);
+  el.patternName.textContent = p.name;
+  el.setTotal.textContent = p.sets;
+  el.dots.innerHTML = Array.from({ length: p.sets }, () => '<span class="dot"></span>').join('');
+  dotEls = [...el.dots.children];
+}
+
+/* =========================================================
+   サウンド（Web Audioで合成）
+   ========================================================= */
+let ac = null, master = null;
+function initAudio() {
+  if (ac) { if (ac.state === 'suspended') ac.resume().catch(()=>{}); return; }
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -12; comp.ratio.value = 6;
+    master = ac.createGain(); master.gain.value = 0.9;
+    master.connect(comp); comp.connect(ac.destination);
+  } catch (e) { ac = null; }
+}
+function tone({ freq, type = 'square', start = 0, dur = 0.12, vol = 0.35, glideTo = null, cutoff = 4000 }) {
+  if (!ac || !soundOn) return;
+  const t = ac.currentTime + start;
+  const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+  f.type = 'lowpass'; f.frequency.setValueAtTime(cutoff, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f); f.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function noiseHit(start = 0, dur = 0.18, vol = 0.25) {
+  if (!ac || !soundOn) return;
+  const t = ac.currentTime + start;
+  const len = Math.floor(ac.sampleRate * dur);
+  const buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = buf; f.type = 'highpass'; f.frequency.value = 1800; g.gain.value = vol;
+  s.connect(f); f.connect(g); g.connect(master); s.start(t);
+}
+const SFX = {
+  // カウントダウン「ピッ」：電子的なダブルレイヤー
+  tick() {
+    tone({ freq: 1046, type: 'square', dur: 0.09, vol: 0.22, cutoff: 3500 });
+    tone({ freq: 523,  type: 'triangle', dur: 0.12, vol: 0.30 });
+  },
+  // トレーニング開始：「ピーン」＋インパクト
+  go() {
+    noiseHit(0, 0.2, 0.3);
+    tone({ freq: 110, type: 'sine', dur: 0.35, vol: 0.6, glideTo: 45 });           // キック
+    tone({ freq: 1568, type: 'sawtooth', dur: 0.7, vol: 0.18, cutoff: 5000 });
+    tone({ freq: 784,  type: 'square',   dur: 0.7, vol: 0.20, cutoff: 3000 });
+    tone({ freq: 1175, type: 'triangle', dur: 0.7, vol: 0.20 });
+  },
+  // 休憩開始：下降する落ち着いた2音
+  rest() {
+    tone({ freq: 880, type: 'triangle', dur: 0.35, vol: 0.35 });
+    tone({ freq: 587, type: 'triangle', start: 0.22, dur: 0.6, vol: 0.35 });
+    tone({ freq: 294, type: 'sine', start: 0.22, dur: 0.7, vol: 0.3 });
+  },
+  // 全セット完了：ファンファーレ
+  done() {
+    const n = [523, 659, 784, 1046];
+    n.forEach((f, i) => tone({ freq: f, type: 'square', start: i * 0.13, dur: 0.18, vol: 0.2, cutoff: 3000 }));
+    [523, 659, 784, 1046].forEach(f => tone({ freq: f, type: 'sawtooth', start: 0.55, dur: 1.2, vol: 0.12, cutoff: 2500 }));
+    tone({ freq: 131, type: 'sine', start: 0.55, dur: 1.2, vol: 0.4 });
+    noiseHit(0.55, 0.3, 0.2);
+  },
+  // 毎秒の控えめなメトロノーム音（チク・タク交互）
+  beat(type, sec) {
+    const alt = sec % 2 === 0;
+    if (type === 'work') {
+      tone({ freq: alt ? 1900 : 1500, type: 'sine', dur: 0.04, vol: 0.10 });
+      tone({ freq: alt ? 180 : 150, type: 'sine', dur: 0.06, vol: 0.12 });
+    } else {
+      tone({ freq: alt ? 820 : 680, type: 'sine', dur: 0.06, vol: 0.06 });
+    }
+  },
+  click() { tone({ freq: 1400, type: 'sine', dur: 0.05, vol: 0.15 }); },
+};
+
+/* ---------- 画面スリープ防止 ---------- */
+let wakeLock = null;
+async function lockScreen() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch (e) {}
+}
+function unlockScreen() { try { wakeLock && wakeLock.release(); } catch (e) {} wakeLock = null; }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state === 'running') lockScreen();
+});
+
+/* =========================================================
+   タイマー制御
+   ========================================================= */
+function start() {
+  initAudio();
+  if (state === 'idle' || state === 'done') {
+    idx = 0; lastSec = null;
+    phaseEnd = performance.now() + phases[0].dur * 1000;
+    if (phases[0].type === 'work') SFX.go();
+  } else if (state === 'paused') {
+    phaseEnd = performance.now() + pausedRemain;
+  }
+  state = 'running';
+  lockScreen();
+  if (!timerId) timerId = setInterval(tick, 50);
+  tick();
+}
+function pause() {
+  if (state !== 'running') return;
+  pausedRemain = Math.max(0, phaseEnd - performance.now());
+  state = 'paused';
+  SFX.click();
+  unlockScreen();
+  render(pausedRemain);
+}
+function reset() {
+  state = 'idle'; idx = 0; lastSec = null; pausedRemain = 0;
+  clearInterval(timerId); timerId = null;
+  unlockScreen();
+  render(phases[0].dur * 1000);
+}
+function finish() {
+  state = 'done';
+  clearInterval(timerId); timerId = null;
+  unlockScreen();
+  SFX.done();
+  render(0);
+}
+
+function tick() {
+  if (state !== 'running') return;
+  let now = performance.now();
+  let rem = phaseEnd - now;
+
+  // フェーズ切替（バックグラウンドで遅れても追いつく）
+  while (rem <= 0) {
+    idx++;
+    if (idx >= phases.length) { finish(); return; }
+    phaseEnd += phases[idx].dur * 1000;
+    rem = phaseEnd - now;
+    lastSec = Math.ceil(rem / 1000);
+    if (phases[idx].type === 'work') SFX.go(); else SFX.rest();
+    flash();
+  }
+
+  // カウントダウン音
+  const sec = Math.ceil(rem / 1000);
+  if (sec !== lastSec) {
+    const type = phases[idx].type;
+    if ((type === 'prep' && sec <= pattern.prep) || ((type === 'work' || type === 'rest') && sec <= 3)) {
+      SFX.tick(); flash();
+    } else if (type === 'work' || type === 'rest') {
+      SFX.beat(type, sec);
+    }
+    lastSec = sec;
+  }
+  render(rem);
+}
+
+function flash() {
+  el.time.classList.remove('flash'); void el.time.offsetWidth; el.time.classList.add('flash');
+}
+
+/* =========================================================
+   描画
+   ========================================================= */
+function fmt(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function setAccent(c) {
+  document.documentElement.style.setProperty('--accent', c);
+  const r = parseInt(c.slice(1,3),16), g = parseInt(c.slice(3,5),16), b = parseInt(c.slice(5,7),16);
+  document.documentElement.style.setProperty('--glow', `rgba(${r},${g},${b},.35)`);
+}
+
+function render(rem) {
+  const ph = phases[idx];
+  const key = state === 'idle' ? 'idle' : state === 'done' ? 'done' : ph.type;
+  const st = PHASE_STYLE[key];
+  setAccent(st.color);
+  el.phase.textContent = st.label;
+  el.app.classList.toggle('is-paused', state === 'paused');
+
+  // 時間とリング
+  const dur = (state === 'idle' ? phases[0].dur : state === 'done' ? 1 : ph.dur) * 1000;
+  const ratio = state === 'done' ? 1 : Math.min(1, Math.max(0, rem / dur));
+  el.time.textContent = state === 'done' ? 'DONE' : (key === 'prep' ? String(Math.max(0, Math.ceil(rem / 1000))) : fmt(rem));
+  el.time.style.fontSize = state === 'done' ? 'min(20vh,11vw)' : '';
+  el.prog.style.strokeDashoffset = el.progGlow.style.strokeDashoffset = (CIRC * (1 - ratio)).toFixed(2);
+
+  // セット表示
+  let setNow = 0;
+  if (state === 'done') setNow = pattern.sets;
+  else if (state !== 'idle') setNow = ph.type === 'prep' ? 0 : ph.set;
+  el.setNow.textContent = setNow;
+  dotEls.forEach((d, i) => {
+    const n = i + 1;
+    let cls = 'dot';
+    if (state === 'done') cls += ' done';
+    else if (state !== 'idle' && ph.type !== 'prep') {
+      if (n < ph.set || (n === ph.set && ph.type === 'rest')) cls += ' done';
+      else if (n === ph.set && ph.type === 'work') cls += ' now';
+    }
+    d.className = cls;
+  });
+
+  // サブテキスト
+  let sub = `${fmtS(pattern.work)} WORK × ${pattern.sets} SETS`;
+  if (state === 'done') sub = '\u00a0';
+  else if (state !== 'idle') {
+    if (ph.type === 'prep') sub = 'SET 1 STARTING SOON';
+    else if (ph.type === 'work') sub = `SET ${ph.set} IN PROGRESS`;
+    else sub = '\u00a0';
+  }
+  el.sub.textContent = sub;
+
+  // 次のフェーズ
+  let next = '—';
+  if (state === 'idle') next = `${PHASE_STYLE[phases[0].type].label} ${phases[0].dur}s`;
+  else if (state !== 'done') {
+    const n = phases[idx + 1];
+    next = n ? `${PHASE_STYLE[n.type].label} ${n.dur}s` : 'FINISH';
+  }
+  el.nextText.textContent = next;
+
+  // 残り合計
+  let left = TOTAL_MS;
+  if (state === 'done') left = 0;
+  else if (state !== 'idle') left = rem + phases.slice(idx + 1).reduce((s, p) => s + p.dur * 1000, 0);
+  el.totalLeft.textContent = fmt(left);
+
+  // ヒント表示
+  el.hint.textContent = state === 'running' ? 'TAP TO PAUSE' : state === 'paused' ? 'TAP TO RESUME' : state === 'done' ? 'TAP TO RESTART' : 'TAP TO START';
+  el.resetBtn.disabled = !(state === 'paused' || state === 'done');
+}
+
+function renderSoundBtn() {
+  el.soundBtn.innerHTML = soundOn
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M18.8 5.8a9 9 0 0 1 0 12.4"/></svg>'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
+  el.soundBtn.style.color = soundOn ? 'var(--text)' : 'var(--mute)';
+}
+
+/* ---------- イベント ---------- */
+function toggleMain() {
+  if (state === 'running') pause(); else start();
+}
+el.ringWrap.addEventListener('click', toggleMain);
+el.resetBtn.addEventListener('click', () => {
+  if (state === 'done') { reset(); return; }
+  confirmBox('RESET TIMER?', 'RESET', reset, 'CANCEL');
+});
+$('backHome').addEventListener('click', () => {
+  const go = () => { reset(); renderHome(); showView('home'); };
+  if (state === 'running' || state === 'paused') {
+    if (state === 'running') pause();
+    confirmBox('QUIT AND GO HOME?', 'QUIT', go, 'CANCEL');
+  } else go();
+});
+
+/* ---------- 確認ダイアログ ---------- */
+let modalOk = null;
+function confirmBox(text, okLabel, onOk, cancelLabel = 'キャンセル') {
+  $('modalCancel').textContent = cancelLabel;
+  $('modalText').textContent = text;
+  $('modalOk').textContent = okLabel;
+  modalOk = onOk;
+  el.modal.classList.add('show');
+}
+$('modalCancel').addEventListener('click', () => { el.modal.classList.remove('show'); modalOk = null; });
+$('modalOk').addEventListener('click', () => { el.modal.classList.remove('show'); const f = modalOk; modalOk = null; f && f(); });
+
+/* =========================================================
+   画面切替
+   ========================================================= */
+function showView(name) {
+  ['homeView', 'editView', 'app'].forEach(id => $(id).classList.remove('active'));
+  $(name === 'home' ? 'homeView' : name === 'edit' ? 'editView' : 'app').classList.add('active');
+  if (name !== 'timer') setAccent('#ffc400');
+}
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtS = sec => sec < 60 ? `${sec}s` : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+const totalOf = p => buildPhases(p).reduce((s, x) => s + x.dur, 0);
+
+/* ---------- ホーム ---------- */
+const PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
+function renderHome() {
+  $('list').innerHTML = patterns.map(p => `
+    <div class="card" data-id="${esc(p.id)}">
+      <button class="edit-btn" data-edit="${esc(p.id)}" aria-label="編集">${PENCIL}</button>
+      <div class="card-name">${esc(p.name)}</div>
+      <div class="card-stats">
+        <div><span class="w">WORK</span><b>${fmtS(p.work)}</b></div>
+        <div><span class="r">REST</span><b>${fmtS(p.rest)}</b></div>
+        <div><span>SETS</span><b>×${p.sets}</b></div>
+      </div>
+      <div class="card-foot"><span>TOTAL ${fmtS(totalOf(p))}</span><span class="card-go">▶ START</span></div>
+    </div>`).join('') +
+    `<button class="card add" id="addCard"><b>＋</b>NEW PATTERN</button>`;
+}
+$('list').addEventListener('click', e => {
+  const editBtn = e.target.closest('[data-edit]');
+  if (editBtn) { openEdit(editBtn.dataset.edit); return; }
+  if (e.target.closest('#addCard')) { openEdit(null); return; }
+  const card = e.target.closest('.card[data-id]');
+  if (card) openTimer(card.dataset.id);
+});
+function openTimer(id) {
+  const p = patterns.find(x => x.id === id);
+  if (!p) return;
+  initAudio();
+  loadPattern(p);
+  showView('timer');
+  reset();
+}
+
+/* ---------- 編集 ---------- */
+const FIELDS = [
+  { key: 'work', label: 'WORK', cls: 'w', min: 5, max: 600, step: 5, show: fmtS },
+  { key: 'rest', label: 'REST', cls: 'r', min: 0, max: 600, step: 5, show: fmtS },
+  { key: 'sets', label: 'SETS', cls: '',  min: 1, max: 50,  step: 1, show: v => '×' + v },
+  { key: 'prep', label: 'COUNTDOWN', cls: 'p', min: 0, max: 10, step: 1, show: v => v + 's' },
+];
+let draft = null, editingId = null;
+$('steppers').innerHTML = FIELDS.map(f => `
+  <div class="stepper" data-key="${f.key}">
+    <div class="st-label ${f.cls}">${f.label}</div>
+    <div class="st-row">
+      <button class="st-btn" data-d="-1" aria-label="${f.label}を減らす">−</button>
+      <div class="st-val" id="val-${f.key}"></div>
+      <button class="st-btn" data-d="1" aria-label="${f.label}を増やす">＋</button>
+    </div>
+  </div>`).join('');
+
+function renderEdit() {
+  FIELDS.forEach(f => { $('val-' + f.key).textContent = f.show(draft[f.key]); });
+  $('editTotal').textContent = fmtS(totalOf(draft));
+}
+function bump(key, dir) {
+  const f = FIELDS.find(x => x.key === key);
+  draft[key] = Math.min(f.max, Math.max(f.min, draft[key] + f.step * dir));
+  renderEdit();
+}
+// 長押しで連続変更
+let holdT = null, holdI = null;
+function stopHold() { clearTimeout(holdT); clearInterval(holdI); holdT = holdI = null; }
+$('steppers').addEventListener('pointerdown', e => {
+  const b = e.target.closest('.st-btn'); if (!b) return;
+  e.preventDefault();
+  const key = b.closest('.stepper').dataset.key, dir = +b.dataset.d;
+  bump(key, dir);
+  stopHold();
+  holdT = setTimeout(() => { holdI = setInterval(() => bump(key, dir), 90); }, 380);
+});
+['pointerup', 'pointerleave', 'pointercancel'].forEach(t => $('steppers').addEventListener(t, stopHold));
+
+function openEdit(id) {
+  editingId = id;
+  const src = id ? patterns.find(x => x.id === id) : null;
+  draft = src ? { ...src } : { id: null, name: '', prep: 5, work: 45, rest: 60, sets: 7 };
+  $('nameInput').value = draft.name;
+  $('editTitle').textContent = id ? 'EDIT' : 'NEW PATTERN';
+  $('editActions').style.visibility = id ? 'visible' : 'hidden';
+  renderEdit();
+  showView('edit');
+}
+const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+$('editCancel').addEventListener('click', () => { renderHome(); showView('home'); });
+$('editSave').addEventListener('click', () => {
+  draft.name = $('nameInput').value.trim() || `PATTERN ${patterns.length + (editingId ? 0 : 1)}`;
+  if (editingId) {
+    const i = patterns.findIndex(x => x.id === editingId);
+    if (i >= 0) patterns[i] = { ...draft, id: editingId };
+  } else {
+    patterns.push({ ...draft, id: newId() });
+  }
+  saveStore(); renderHome(); showView('home');
+});
+$('editDup').addEventListener('click', () => {
+  const name = ($('nameInput').value.trim() || draft.name || 'PATTERN') + ' コピー';
+  patterns.push({ ...draft, name, id: newId() });
+  saveStore(); renderHome(); showView('home');
+});
+$('editDel').addEventListener('click', () => {
+  confirmBox(`「${$('nameInput').value.trim() || draft.name}」を削除しますか？`, '削除', () => {
+    patterns = patterns.filter(x => x.id !== editingId);
+    saveStore(); renderHome(); showView('home');
+  });
+});
+el.soundBtn.addEventListener('click', () => {
+  soundOn = !soundOn; initAudio(); renderSoundBtn(); if (soundOn) SFX.click();
+});
+document.addEventListener('keydown', e => { if (e.code === 'Space' && $('app').classList.contains('active')) { e.preventDefault(); toggleMain(); } });
+
+renderSoundBtn();
+loadPattern(pattern);
+renderHome();
+showView('home');
+
+/* ---------- オフライン対応（PWA） ---------- */
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
+</script>
+</body>
+</html>
